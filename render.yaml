@@ -1,0 +1,13 @@
+# BitterMusicPlayer Meting 服务 — Render 一键部署配置
+# 使用方法：把整个 server/ 目录推送到 GitHub，在 Render 上 New > Web Service，
+# 连接该仓库，选择 Docker，Render 会自动读取本文件并部署。
+services:
+  - type: web
+    name: bittermusic-meting
+    runtime: docker
+    plan: free
+    envVars:
+      - key: PORT
+        value: 8300
+    healthCheckPath: /health
+    autoDeploy: true
