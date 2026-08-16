@@ -1,0 +1,13 @@
+{
+  "name": "bittermusic-meting-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "BitterMusicPlayer 基于 Meting 的音乐源代理服务",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@meting/core": "^1.6.0"
+  }
+}
