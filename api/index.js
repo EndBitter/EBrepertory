@@ -30,10 +30,27 @@ function normalizeSongs(list) {
 }
 
 async function handleSearch(q, server) {
-  const m = meting(server);
-  const raw = await m.search(q.keywords || '', { page: 1, limit: 20 });
-  const list = JSON.parse(raw);
-  return { songs: normalizeSongs(list) };
+  // 优先请求指定平台，若被限流(429)或失败，自动按序降级到其他平台
+  const preferred = SERVERS.includes(server) ? [server] : [];
+  const fallbacks = SERVERS.filter(s => s !== server);
+  const order = [...preferred, ...fallbacks];
+  let lastErr = null;
+  for (const s of order) {
+    try {
+      const m = meting(s);
+      const raw = await m.search(q.keywords || '', { page: 1, limit: 20 });
+      const list = JSON.parse(raw);
+      if (list && list.length) {
+        return { songs: normalizeSongs(list), platform: s };
+      }
+      lastErr = new Error('empty result from ' + s);
+    } catch (e) {
+      lastErr = e;
+      // 限流则稍作停顿再试下一个平台
+      await new Promise(r => setTimeout(r, 600));
+    }
+  }
+  throw lastErr || new Error('no source available');
 }
 
 async function handleUrl(q, server) {
