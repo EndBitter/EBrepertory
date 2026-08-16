@@ -16,14 +16,14 @@ function meting(server) {
   return m;
 }
 
-function normalizeSongs(list) {
+function normalizeSongs(list, platform) {
   return (list || []).map(s => ({
     id: String(s.id || s.url_id || ''),
     name: s.name || '未知歌曲',
     artist: (s.artist || []).join(' / '),
     album: s.album || '',
     duration: Math.round(s.duration || 0),
-    source: s.source || 'netease',
+    source: platform || s.source || 'netease',
     remote: true,
     src: ''
   }));
@@ -41,7 +41,7 @@ async function handleSearch(q, server) {
       const raw = await m.search(q.keywords || '', { page: 1, limit: 20 });
       const list = JSON.parse(raw);
       if (list && list.length) {
-        return { songs: normalizeSongs(list), platform: s };
+        return { songs: normalizeSongs(list, s), platform: s };
       }
       lastErr = new Error('empty result from ' + s);
     } catch (e) {
