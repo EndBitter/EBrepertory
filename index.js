@@ -1,13 +1,12 @@
 /**
- * BitterMusicPlayer — Meting 音乐源代理服务
+ * BitterMusicPlayer — 本地一键启动版
+ * 在你自己国内可常开的电脑/服务器上运行本服务，
+ * 手机 App 填这个地址即可搜索+播放热门歌（网易云/腾讯/酷狗等多平台）。
  *
- * 基于 metowolf/Meting (@meting/core) 封装为标准 HTTP 接口，
- * 供播放器 / APK 调用。统一契约：
- *   GET /search?keywords=xxx&server=netease   -> { songs: [...] }
- *   GET /song/url?id=xxx&server=netease       -> { url: "..." }
- *   GET /lyric?id=xxx&server=netease          -> { lrc: { lyric: "..." } }
- *
- * 启动：node index.js   （默认端口 8300）
+ * 用法：
+ *   node index.js            （监听 0.0.0.0:8300，局域网可访问）
+ * 环境变量：
+ *   PORT=?  自定义端口，默认 8300
  */
 import http from 'node:http';
 import { URL } from 'node:url';
@@ -16,7 +15,6 @@ import Meting from '@meting/core';
 const PORT = process.env.PORT || 8300;
 const SERVERS = ['netease', 'tencent', 'kugou', 'baidu', 'kuwo'];
 
-/** 创建指定平台的 Meting 实例 */
 function meting(server) {
   const s = SERVERS.includes(server) ? server : 'netease';
   const m = new Meting(s);
@@ -24,7 +22,6 @@ function meting(server) {
   return m;
 }
 
-/** 统一 JSON 响应 */
 function send(res, code, data) {
   res.writeHead(code, {
     'Content-Type': 'application/json; charset=utf-8',
@@ -35,31 +32,44 @@ function send(res, code, data) {
   res.end(JSON.stringify(data));
 }
 
-/** 将 Meting 搜索结果标准化为播放器需要的格式 */
-function normalizeSongs(list) {
+function normalizeSongs(list, platform) {
   return (list || []).map(s => ({
     id: String(s.id || s.url_id || ''),
     name: s.name || '未知歌曲',
     artist: (s.artist || []).join(' / '),
     album: s.album || '',
     duration: Math.round(s.duration || 0),
-    source: s.source || 'netease',
+    source: platform || s.source || 'netease',
     remote: true,
     src: ''
   }));
 }
 
 async function handleSearch(q, server) {
-  const m = meting(server);
-  const raw = await m.search(q.keywords || '', { page: 1, limit: 20 });
-  const list = JSON.parse(raw);
-  return { songs: normalizeSongs(list) };
+  const preferred = SERVERS.includes(server) ? [server] : [];
+  const fallbacks = SERVERS.filter(s => s !== server);
+  const order = [...preferred, ...fallbacks];
+  let lastErr = null;
+  for (const s of order) {
+    try {
+      const m = meting(s);
+      const raw = await m.search(q.keywords || '', { page: 1, limit: 20 });
+      const list = JSON.parse(raw);
+      if (list && list.length) {
+        return { songs: normalizeSongs(list, s), platform: s };
+      }
+      lastErr = new Error('empty result from ' + s);
+    } catch (e) {
+      lastErr = e;
+      await new Promise(r => setTimeout(r, 600));
+    }
+  }
+  throw lastErr || new Error('no source available');
 }
 
 async function handleUrl(q, server) {
   const m = meting(server);
   const id = q.id || '';
-  // 依次尝试 320 / 128 kbps，取第一个可用的
   for (const br of [320, 128]) {
     try {
       const raw = await m.url(id, br);
@@ -89,27 +99,16 @@ const server = http.createServer(async (req, res) => {
   const serverName = q.server || 'netease';
 
   if (req.method === 'OPTIONS') {
-    res.writeHead(204, {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET,OPTIONS',
-      'Access-Control-Allow-Headers': '*'
-    });
+    res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,OPTIONS', 'Access-Control-Allow-Headers': '*' });
     return res.end();
   }
-
   try {
-    if (u.pathname === '/' || u.pathname === '/health') {
-      return send(res, 200, { status: 'ok', service: 'bittermusic-meting', servers: SERVERS });
-    }
-    if (u.pathname === '/search') {
-      return send(res, 200, await handleSearch(q, serverName));
-    }
-    if (u.pathname === '/song/url') {
-      return send(res, 200, await handleUrl(q, serverName));
-    }
-    if (u.pathname === '/lyric') {
-      return send(res, 200, await handleLyric(q, serverName));
-    }
+    // 兼容带或不带 /api 前缀的路径
+    const p = u.pathname.replace(/^\/api(?=\/|$)/, '') || '/';
+    if (p === '/' || p === '/health') return send(res, 200, { status: 'ok', service: 'bittermusic-meting', servers: SERVERS });
+    if (p === '/search') return send(res, 200, await handleSearch(q, serverName));
+    if (p === '/song/url') return send(res, 200, await handleUrl(q, serverName));
+    if (p === '/lyric') return send(res, 200, await handleLyric(q, serverName));
     return send(res, 404, { error: 'not found' });
   } catch (e) {
     return send(res, 500, { error: e.message || 'server error' });
@@ -117,6 +116,12 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`[BitterMusic] Meting 代理服务已启动: http://0.0.0.0:${PORT}`);
-  console.log(`[BitterMusic] 支持平台: ${SERVERS.join(', ')}`);
+  console.log('');
+  console.log('=====================================================');
+  console.log(' BitterMusicPlayer 音乐后端已启动');
+  console.log(' 本机访问:   http://127.0.0.1:' + PORT);
+  console.log(' 局域网访问: http://你电脑的局域网IP:' + PORT);
+  console.log(' 手机App里把API地址填成上面的 http://IP:PORT');
+  console.log('=====================================================');
+  console.log('');
 });
