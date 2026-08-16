@@ -10,6 +10,22 @@
     {
       "src": "/api/(.*)",
       "dest": "/api/index.js"
+    },
+    {
+      "src": "/search",
+      "dest": "/api/index.js"
+    },
+    {
+      "src": "/song/url",
+      "dest": "/api/index.js"
+    },
+    {
+      "src": "/lyric",
+      "dest": "/api/index.js"
+    },
+    {
+      "src": "/health",
+      "dest": "/api/index.js"
     }
   ]
 }
